@@ -1,0 +1,128 @@
+{
+  "entities": {
+    "User": {
+      "title": "User",
+      "description": "System users with access control",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "name": { "type": "string" },
+        "email": { "type": "string" },
+        "role": { "type": "string" },
+        "accessType": { "enum": ["Administrador", "Coordenação", "Profissional", "Recepção"] },
+        "status": { "enum": ["Active", "Inactive"] },
+        "createdAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["id", "name", "email", "accessType", "status"]
+    },
+    "Patient": {
+      "title": "Patient",
+      "description": "Patient medical record information",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "name": { "type": "string" },
+        "medicalRecordNumber": { "type": "string" },
+        "birthDate": { "type": "string", "format": "date" },
+        "gender": { "enum": ["M", "F", "Outro"] },
+        "city": { "type": "string" },
+        "diagnoses": { "type": "array", "items": { "type": "string" } },
+        "professionals": { "type": "array", "items": { "type": "string" } },
+        "status": { "enum": ["Ativo", "Alta", "Investigação", "Espera"] },
+        "entryDate": { "type": "string", "format": "date" },
+        "dischargeDate": { "type": "string", "format": "date" },
+        "observations": { "type": "string" },
+        "createdAt": { "type": "string", "format": "date-time" },
+        "updatedAt": { "type": "string", "format": "date-time" },
+        "updatedBy": { "type": "string" },
+        "deletedAt": { "type": "string", "format": "date-time" },
+        "absenteeismCount": { "type": "integer", "default": 0 }
+      },
+      "required": ["id", "name", "medicalRecordNumber", "status"]
+    },
+    "Movement": {
+      "title": "Movement",
+      "description": "Records of patient movements and attendances",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "patientId": { "type": "string" },
+        "patientName": { "type": "string" },
+        "medicalRecordNumber": { "type": "string" },
+        "diagnoses": { "type": "array", "items": { "type": "string" } },
+        "professionals": { "type": "array", "items": { "type": "string" } },
+        "responsibleProfessional": { "type": "string" },
+        "type": { "enum": ["Entrada", "Alta", "Transferência", "Mudança de profissional", "Atualização cadastral", "Atendimento", "Absenteísmo"] },
+        "date": { "type": "string", "format": "date-time" },
+        "observations": { "type": "string" },
+        "createdAt": { "type": "string", "format": "date-time" },
+        "createdBy": { "type": "string" },
+        "deletedAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["id", "patientId", "type", "date"]
+    },
+    "Professional": {
+      "title": "Professional",
+      "description": "Multidisciplinary team members",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "name": { "type": "string" },
+        "area": { "type": "string" },
+        "status": { "enum": ["Active", "Inactive"] },
+        "createdAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["id", "name", "area", "status"]
+    },
+    "Municipality": {
+      "title": "Municipality",
+      "description": "Registered municipalities",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "name": { "type": "string" },
+        "status": { "enum": ["Active", "Inactive"] },
+        "createdAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["id", "name", "status"]
+    },
+    "Diagnosis": {
+      "title": "Diagnosis",
+      "description": "Patient diagnoses options",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "name": { "type": "string" },
+        "status": { "enum": ["Active", "Inactive"] },
+        "createdAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["id", "name", "status"]
+    }
+  },
+  "firestore": {
+    "/usuarios/{userId}": {
+      "schema": "User",
+      "description": "Collection of system users"
+    },
+    "/pacientes/{patientId}": {
+      "schema": "Patient",
+      "description": "Collection of patients"
+    },
+    "/movimentacoes/{movementId}": {
+      "schema": "Movement",
+      "description": "Collection of patient movements"
+    },
+    "/profissionais/{professionalId}": {
+      "schema": "Professional",
+      "description": "Collection of multidisciplinary professionals"
+    },
+    "/municipios/{municipalityId}": {
+      "schema": "Municipality",
+      "description": "Collection of municipalities"
+    },
+    "/diagnosticos/{diagnosisId}": {
+      "schema": "Diagnosis",
+      "description": "Collection of diagnosis options"
+    }
+  }
+}
