@@ -63,24 +63,26 @@ export const PatientService = {
     return onSnapshot(q, (snapshot) => {
       const firestoreDocs = snapshot.docs.map(doc => doc.data() as Patient);
       
-      // Merge local cache with Firestore docs to prevent losing unsynced local items
-      const localCache = getLocalCache();
-      const mergedMap = new Map<string, Patient>();
-      
-      localCache.forEach(p => mergedMap.set(p.id, p));
-      firestoreDocs.forEach(p => mergedMap.set(p.id, p));
+      if (firestoreDocs.length > 0) {
+        saveLocalCache(firestoreDocs);
+      } else {
+        // If firestore is empty but we have local patients, push them to Firestore
+        const localCache = getLocalCache();
+        if (localCache.length > 0) {
+          localCache.forEach(p => {
+            setDoc(doc(db, PATH, p.id), p).catch(err => console.error('Error syncing local patient to Firestore:', err));
+          });
+        }
+      }
 
-      const mergedList = Array.from(mergedMap.values());
-      saveLocalCache(mergedList);
-
-      const activeList = mergedList
+      const currentList = getLocalCache();
+      const activeList = currentList
         .filter(p => !p.deletedAt)
         .sort((a, b) => (a.name || '').localeCompare(b.name || ''));
 
       callback(activeList);
     }, (error) => {
       handleFirestoreError(error, OperationType.LIST, PATH);
-      // Keep serving cached data on error
       const currentCache = getLocalCache()
         .filter(p => !p.deletedAt)
         .sort((a, b) => (a.name || '').localeCompare(b.name || ''));
@@ -99,17 +101,12 @@ export const PatientService = {
     const q = query(collection(db, PATH));
     return onSnapshot(q, (snapshot) => {
       const firestoreDocs = snapshot.docs.map(doc => doc.data() as Patient);
-      
-      const localCache = getLocalCache();
-      const mergedMap = new Map<string, Patient>();
-      
-      localCache.forEach(p => mergedMap.set(p.id, p));
-      firestoreDocs.forEach(p => mergedMap.set(p.id, p));
+      if (firestoreDocs.length > 0) {
+        saveLocalCache(firestoreDocs);
+      }
 
-      const mergedList = Array.from(mergedMap.values());
-      saveLocalCache(mergedList);
-
-      const deletedList = mergedList
+      const currentList = getLocalCache();
+      const deletedList = currentList
         .filter(p => !!p.deletedAt)
         .sort((a, b) => new Date(b.deletedAt!).getTime() - new Date(a.deletedAt!).getTime());
 

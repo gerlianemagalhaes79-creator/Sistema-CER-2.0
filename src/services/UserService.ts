@@ -115,19 +115,12 @@ const notifySubscribers = () => {
 };
 
 const mergeUsers = (firestoreDocs: User[]): User[] => {
-  const localCache = getLocalUsersCache();
   const map = new Map<string, User>();
 
-  // 1. Base default users
-  DEFAULT_USERS.forEach(u => map.set(u.id, u));
-
-  // 2. Overlay local cache
-  localCache.forEach(u => map.set(u.id, u));
-
-  // 3. Overlay Firestore documents (preserving fields if doc is partial)
   firestoreDocs.forEach(u => {
-    const existing = map.get(u.id);
-    map.set(u.id, { ...(existing || {}), ...u });
+    if (u && u.id) {
+      map.set(u.id, u);
+    }
   });
 
   const mergedAll = Array.from(map.values());
@@ -169,8 +162,16 @@ export const UserService = {
       const q = query(collection(db, PATH));
       const unsubscribe = onSnapshot(q, (snapshot) => {
         const fetched = snapshot.docs.map(doc => doc.data() as User);
-        const active = mergeUsers(fetched);
-        callback(active);
+        if (fetched.length === 0) {
+          DEFAULT_USERS.forEach(u => {
+            setDoc(doc(db, PATH, u.id), u).catch(err => console.error('Error seeding default user:', err));
+          });
+          saveLocalUsersCache(DEFAULT_USERS);
+          callback(DEFAULT_USERS.filter(u => u.status !== 'Inactive'));
+        } else {
+          const active = mergeUsers(fetched);
+          callback(active);
+        }
       }, (error) => {
         console.warn('Subscription error on usuarios:', error);
         callback(UserService.getActiveUsers());
@@ -271,11 +272,11 @@ export const UserService = {
   },
 
   loginWithCredentials: async (loginInput: string, passwordInput: string): Promise<User> => {
-    const term = loginInput.trim().toLowerCase();
+    const term = loginInput.trim();
     const pass = passwordInput.trim();
 
     if (!term) {
-      throw new Error('Informe o nome completo ou e-mail.');
+      throw new Error('Informe o nome do funcionário ou e-mail cadastrado.');
     }
     if (!pass) {
       throw new Error('Informe a senha de acesso.');
@@ -288,22 +289,23 @@ export const UserService = {
       allUsers = DEFAULT_USERS;
     }
 
-    // Match exact or partial name, or exact email
-    const matched = allUsers.find(
-      u => u.name.toLowerCase() === term ||
-           u.email.toLowerCase() === term ||
-           u.name.toLowerCase().includes(term)
-    ) || DEFAULT_USERS.find(
-      u => u.name.toLowerCase() === term ||
-           u.email.toLowerCase() === term ||
-           u.name.toLowerCase().includes(term)
+    const normalize = (str: string) => str.trim().toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "");
+    const normalizedTerm = normalize(term);
+
+    // Exact match on employee name or email
+    const matched = allUsers.find(u => 
+      normalize(u.name) === normalizedTerm || 
+      normalize(u.email) === normalizedTerm
+    ) || DEFAULT_USERS.find(u => 
+      normalize(u.name) === normalizedTerm || 
+      normalize(u.email) === normalizedTerm
     );
 
     if (!matched) {
-      throw new Error('Usuário não encontrado. Verifique o nome completo ou e-mail digitado.');
+      throw new Error('Usuário não encontrado. Digite o nome completo do funcionário ou e-mail cadastrado.');
     }
 
-    if (matched.status !== 'Active') {
+    if (matched.status === 'Inactive') {
       throw new Error('Esta conta de usuário está inativa. Contate a administração.');
     }
 

@@ -7,9 +7,22 @@ import {
   setDoc
 } from 'firebase/firestore';
 import { db, handleFirestoreError, OperationType } from '../lib/firebase';
-import { Professional } from '../types';
+import { Professional, PROFESSIONALS } from '../types';
 
 const CACHE_KEY = 'cer_professionals_cache_v2';
+
+const INITIAL_SEED_PROFESSIONALS: Professional[] = PROFESSIONALS.map((proName, index) => {
+  const parts = proName.split(' (');
+  const name = parts[0];
+  const area = parts[1] ? parts[1].replace(')', '') : 'Atendimento Multidisciplinar';
+  return {
+    id: `pro-seed-${index + 1}`,
+    name,
+    area,
+    status: 'Active',
+    createdAt: new Date().toISOString()
+  };
+});
 
 const listeners = new Set<(professionals: Professional[]) => void>();
 
@@ -18,20 +31,19 @@ const getLocalCache = (): Professional[] => {
     const data = localStorage.getItem(CACHE_KEY);
     if (data) {
       const parsed = JSON.parse(data);
-      if (Array.isArray(parsed)) {
-        return parsed.filter(p => !p.id.startsWith('default-pro-'));
+      if (Array.isArray(parsed) && parsed.length > 0) {
+        return parsed;
       }
     }
   } catch (e) {
     console.error('Error reading professional cache:', e);
   }
-  return [];
+  return INITIAL_SEED_PROFESSIONALS;
 };
 
 const saveLocalCache = (items: Professional[]) => {
   try {
-    const cleanItems = items.filter(p => !p.id.startsWith('default-pro-'));
-    localStorage.setItem(CACHE_KEY, JSON.stringify(cleanItems));
+    localStorage.setItem(CACHE_KEY, JSON.stringify(items));
   } catch (e) {
     console.error('Error saving professional cache:', e);
   }
@@ -40,7 +52,7 @@ const saveLocalCache = (items: Professional[]) => {
 const getActiveProfessionals = (): Professional[] => {
   const cache = getLocalCache();
   return cache
-    .filter(p => p.status === 'Active' && !p.id.startsWith('default-pro-'))
+    .filter(p => p.status === 'Active')
     .sort((a, b) => (a.name || '').localeCompare(b.name || '', 'pt-BR'));
 };
 
@@ -56,19 +68,11 @@ const notifySubscribers = () => {
 };
 
 const mergeProfessionals = (firestoreDocs: Professional[]): Professional[] => {
-  const localCache = getLocalCache();
   const map = new Map<string, Professional>();
 
-  localCache.forEach(p => {
-    if (p && p.id && !p.id.startsWith('default-pro-')) {
-      map.set(p.id, p);
-    }
-  });
-
   firestoreDocs.forEach(p => {
-    if (p && p.id && !p.id.startsWith('default-pro-')) {
-      const existing = map.get(p.id);
-      map.set(p.id, { ...(existing || {}), ...p });
+    if (p && p.id) {
+      map.set(p.id, p);
     }
   });
 
@@ -106,8 +110,16 @@ export const ProfessionalService = {
         const q = query(collection(db, PATH));
         firestoreUnsubscribe = onSnapshot(q, (snapshot) => {
           const fetched = snapshot.docs.map(doc => doc.data() as Professional);
-          mergeProfessionals(fetched);
-          notifySubscribers();
+          if (fetched.length === 0) {
+            INITIAL_SEED_PROFESSIONALS.forEach(pro => {
+              setDoc(doc(db, PATH, pro.id), pro).catch(err => console.error('Error seeding professional:', err));
+            });
+            saveLocalCache(INITIAL_SEED_PROFESSIONALS);
+            notifySubscribers();
+          } else {
+            mergeProfessionals(fetched);
+            notifySubscribers();
+          }
         }, (error) => {
           handleFirestoreError(error, OperationType.LIST, PATH);
           notifySubscribers();

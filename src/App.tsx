@@ -2207,30 +2207,16 @@ export default function App() {
 }
 
 const LoginPage = ({ onLogin }: { onLogin: (user: User) => void }) => {
-  const [usersList, setUsersList] = useState<User[]>([]);
   const [loginInput, setLoginInput] = useState('');
   const [passwordInput, setPasswordInput] = useState('');
   const [showPassword, setShowPassword] = useState(false);
-  const [mode, setMode] = useState<'login' | 'select'>('login');
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
-
-  useEffect(() => {
-    const loadUsers = async () => {
-      try {
-        const users = await UserService.getUsers();
-        setUsersList(users);
-      } catch (err) {
-        console.warn('Error loading user list:', err);
-      }
-    };
-    loadUsers();
-  }, []);
 
   const handleCredentialsLogin = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!loginInput.trim()) {
-      setError('Por favor, digite o nome completo ou e-mail.');
+      setError('Por favor, digite seu nome de funcionário ou e-mail cadastrado.');
       return;
     }
     if (!passwordInput.trim()) {
@@ -2248,13 +2234,6 @@ const LoginPage = ({ onLogin }: { onLogin: (user: User) => void }) => {
     } finally {
       setLoading(false);
     }
-  };
-
-  const handleQuickSelect = (user: User) => {
-    setLoginInput(user.name);
-    setPasswordInput(user.password || '123');
-    setMode('login');
-    setError('');
   };
 
   return (
@@ -2279,121 +2258,63 @@ const LoginPage = ({ onLogin }: { onLogin: (user: User) => void }) => {
           </div>
         )}
 
-        {/* Tab Selector */}
-        <div className="flex bg-slate-100 p-1.5 rounded-2xl mb-6">
-          <button
-            type="button"
-            onClick={() => { setMode('login'); setError(''); }}
-            className={`flex-1 py-2.5 rounded-xl text-xs font-black transition-all ${
-              mode === 'login' 
-                ? 'bg-white text-[#064e3b] shadow-sm' 
-                : 'text-gray-500 hover:text-gray-800'
-            }`}
-          >
-            Entrar com Login e Senha
-          </button>
-          <button
-            type="button"
-            onClick={() => { setMode('select'); setError(''); }}
-            className={`flex-1 py-2.5 rounded-xl text-xs font-black transition-all ${
-              mode === 'select' 
-                ? 'bg-white text-[#064e3b] shadow-sm' 
-                : 'text-gray-500 hover:text-gray-800'
-            }`}
-          >
-            Perfis Cadastrados
-          </button>
-        </div>
-
-        {mode === 'login' ? (
-          <form onSubmit={handleCredentialsLogin} className="space-y-4">
-            <div>
-              <label className="block text-xs font-black text-gray-700 uppercase tracking-wider mb-2 ml-1">
-                Login (Nome Completo ou E-mail)
-              </label>
-              <div className="relative">
-                <UserSquare2 className="absolute left-3.5 top-1/2 -translate-y-1/2 text-gray-400" size={18} />
-                <input
-                  type="text"
-                  placeholder="Ex: Gerliane Magalhães"
-                  value={loginInput}
-                  onChange={(e) => setLoginInput(e.target.value)}
-                  className="w-full pl-10 pr-4 py-3.5 rounded-2xl border border-gray-200 bg-white focus:ring-2 focus:ring-emerald-500 outline-none text-sm font-semibold"
-                />
-              </div>
-            </div>
-
-            <div>
-              <label className="block text-xs font-black text-gray-700 uppercase tracking-wider mb-2 ml-1">
-                Senha de Acesso
-              </label>
-              <div className="relative">
-                <Key className="absolute left-3.5 top-1/2 -translate-y-1/2 text-gray-400" size={18} />
-                <input
-                  type={showPassword ? 'text' : 'password'}
-                  placeholder="Digite sua senha"
-                  value={passwordInput}
-                  onChange={(e) => setPasswordInput(e.target.value)}
-                  className="w-full pl-10 pr-12 py-3.5 rounded-2xl border border-gray-200 bg-white focus:ring-2 focus:ring-emerald-500 outline-none text-sm font-semibold"
-                />
-                <button
-                  type="button"
-                  onClick={() => setShowPassword(!showPassword)}
-                  className="absolute right-3.5 top-1/2 -translate-y-1/2 text-xs font-bold text-emerald-700 hover:text-emerald-900"
-                >
-                  {showPassword ? 'Ocultar' : 'Mostrar'}
-                </button>
-              </div>
-            </div>
-
-            <button
-              type="submit"
-              disabled={loading}
-              className="w-full bg-[#064e3b] text-white py-4 rounded-2xl font-black text-xs uppercase tracking-widest hover:bg-[#053d2e] shadow-lg shadow-emerald-900/20 transition-all active:scale-98 flex items-center justify-center gap-2"
-            >
-              {loading ? (
-                <div className="w-5 h-5 border-2 border-white/20 border-t-white rounded-full animate-spin"></div>
-              ) : (
-                'Entrar no Sistema'
-              )}
-            </button>
-          </form>
-        ) : (
-          <div className="space-y-3">
-            <p className="text-xs font-bold text-gray-500 mb-2 text-center">
-              Selecione um usuário para selecionar o perfil:
-            </p>
-            <div className="space-y-2.5 max-h-72 overflow-y-auto pr-1">
-              {usersList.map((user) => (
-                <button
-                  key={user.id}
-                  onClick={() => handleQuickSelect(user)}
-                  className="w-full p-4 rounded-2xl border border-gray-100 bg-emerald-50/30 hover:bg-emerald-50 hover:border-emerald-200 transition-all text-left flex items-center justify-between group cursor-pointer"
-                >
-                  <div className="flex items-center gap-3">
-                    <div className="w-10 h-10 rounded-xl bg-[#064e3b] text-white flex items-center justify-center font-bold text-sm shadow-sm group-hover:scale-105 transition-transform">
-                      {user.name.charAt(0).toUpperCase()}
-                    </div>
-                    <div>
-                      <p className="font-extrabold text-sm text-gray-800 group-hover:text-[#064e3b]">{user.name}</p>
-                      <p className="text-xs text-gray-500 font-medium">
-                        {user.email || user.accessType}
-                      </p>
-                    </div>
-                  </div>
-                  <span className="text-[10px] font-black uppercase tracking-wider px-2.5 py-1 rounded-lg bg-white border border-emerald-100 text-[#064e3b] shadow-xs">
-                    {user.accessType}
-                  </span>
-                </button>
-              ))}
+        <form onSubmit={handleCredentialsLogin} className="space-y-4">
+          <div>
+            <label className="block text-xs font-black text-gray-700 uppercase tracking-wider mb-2 ml-1">
+              Usuário / Nome do Funcionário ou E-mail
+            </label>
+            <div className="relative">
+              <UserSquare2 className="absolute left-3.5 top-1/2 -translate-y-1/2 text-gray-400" size={18} />
+              <input
+                type="text"
+                placeholder="Ex: Gerliane Magalhães"
+                value={loginInput}
+                onChange={(e) => setLoginInput(e.target.value)}
+                className="w-full pl-10 pr-4 py-3.5 rounded-2xl border border-gray-200 bg-white focus:ring-2 focus:ring-emerald-500 outline-none text-sm font-semibold"
+              />
             </div>
           </div>
-        )}
 
-        <div className="mt-8 flex items-center justify-center gap-3">
-          <div className="h-px bg-gray-100 flex-1"></div>
-          <p className="text-[10px] font-black text-gray-400 uppercase tracking-widest">Acesso por Nome e Senha</p>
-          <div className="h-px bg-gray-100 flex-1"></div>
+          <div>
+            <label className="block text-xs font-black text-gray-700 uppercase tracking-wider mb-2 ml-1">
+              Senha de Acesso
+            </label>
+            <div className="relative">
+              <Key className="absolute left-3.5 top-1/2 -translate-y-1/2 text-gray-400" size={18} />
+              <input
+                type={showPassword ? 'text' : 'password'}
+                placeholder="Digite sua senha"
+                value={passwordInput}
+                onChange={(e) => setPasswordInput(e.target.value)}
+                className="w-full pl-10 pr-12 py-3.5 rounded-2xl border border-gray-200 bg-white focus:ring-2 focus:ring-emerald-500 outline-none text-sm font-semibold"
+              />
+              <button
+                type="button"
+                onClick={() => setShowPassword(!showPassword)}
+                className="absolute right-3.5 top-1/2 -translate-y-1/2 text-xs font-bold text-emerald-700 hover:text-emerald-900"
+              >
+                {showPassword ? 'Ocultar' : 'Mostrar'}
+              </button>
+            </div>
+          </div>
+
+          <button
+            type="submit"
+            disabled={loading}
+            className="w-full bg-[#064e3b] text-white py-4 rounded-2xl font-black text-xs uppercase tracking-widest hover:bg-[#053d2e] shadow-lg shadow-emerald-900/20 transition-all active:scale-98 flex items-center justify-center gap-2"
+          >
+            {loading ? (
+              <div className="w-5 h-5 border-2 border-white/20 border-t-white rounded-full animate-spin"></div>
+            ) : (
+              'Entrar no Sistema'
+            )}
+          </button>
+        </form>
+
+        <div className="mt-8 pt-6 border-t border-gray-100 text-center">
+          <p className="text-[11px] font-medium text-gray-500 leading-relaxed">
+            🔒 <strong>Autenticação Segura &amp; Tempo Real:</strong> Cada usuário acessa com seu próprio nome e senha. Todas as alterações (novos profissionais, municípios, diagnósticos ou movimentações) são sincronizadas em tempo real para toda a equipe simultaneamente.
+          </p>
         </div>
       </motion.div>
     </div>

@@ -63,16 +63,19 @@ export const MovementService = {
     return onSnapshot(q, (snapshot) => {
       const firestoreDocs = snapshot.docs.map(doc => doc.data() as Movement);
       
-      const localCache = getLocalCache();
-      const mergedMap = new Map<string, Movement>();
-      
-      localCache.forEach(m => mergedMap.set(m.id, m));
-      firestoreDocs.forEach(m => mergedMap.set(m.id, m));
+      if (firestoreDocs.length > 0) {
+        saveLocalCache(firestoreDocs);
+      } else {
+        const localCache = getLocalCache();
+        if (localCache.length > 0) {
+          localCache.forEach(m => {
+            setDoc(doc(db, PATH, m.id), m).catch(err => console.error('Error syncing local movement to Firestore:', err));
+          });
+        }
+      }
 
-      const mergedList = Array.from(mergedMap.values());
-      saveLocalCache(mergedList);
-
-      const activeList = mergedList
+      const currentList = getLocalCache();
+      const activeList = currentList
         .filter(m => !m.deletedAt)
         .sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime());
 
@@ -98,16 +101,12 @@ export const MovementService = {
     return onSnapshot(q, (snapshot) => {
       const firestoreDocs = snapshot.docs.map(doc => doc.data() as Movement);
       
-      const localCache = getLocalCache();
-      const mergedMap = new Map<string, Movement>();
-      
-      localCache.forEach(m => mergedMap.set(m.id, m));
-      firestoreDocs.forEach(m => mergedMap.set(m.id, m));
+      if (firestoreDocs.length > 0) {
+        saveLocalCache(firestoreDocs);
+      }
 
-      const mergedList = Array.from(mergedMap.values());
-      saveLocalCache(mergedList);
-
-      const deletedList = mergedList
+      const currentList = getLocalCache();
+      const deletedList = currentList
         .filter(m => !!m.deletedAt)
         .sort((a, b) => new Date(b.deletedAt!).getTime() - new Date(a.deletedAt!).getTime());
 

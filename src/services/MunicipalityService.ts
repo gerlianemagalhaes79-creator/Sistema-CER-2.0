@@ -64,19 +64,12 @@ const notifySubscribers = () => {
 };
 
 const mergeMunicipalities = (firestoreDocs: Municipality[]): Municipality[] => {
-  const localCache = getLocalCache();
   const map = new Map<string, Municipality>();
 
-  localCache.forEach(m => {
-    if (m && m.id) {
-      map.set(m.id, m);
-    }
-  });
-
+  // Use firestoreDocs as primary
   firestoreDocs.forEach(m => {
     if (m && m.id) {
-      const existing = map.get(m.id);
-      map.set(m.id, { ...(existing || {}), ...m });
+      map.set(m.id, m);
     }
   });
 
@@ -114,8 +107,17 @@ export const MunicipalityService = {
         const q = query(collection(db, PATH));
         firestoreUnsubscribe = onSnapshot(q, (snapshot) => {
           const fetched = snapshot.docs.map(doc => doc.data() as Municipality);
-          mergeMunicipalities(fetched);
-          notifySubscribers();
+          if (fetched.length === 0) {
+            // Seed initial seed cities into Firestore so all users see the exact same list!
+            INITIAL_SEED_CITIES.forEach(city => {
+              setDoc(doc(db, PATH, city.id), city).catch(err => console.error('Error seeding city:', err));
+            });
+            saveLocalCache(INITIAL_SEED_CITIES);
+            notifySubscribers();
+          } else {
+            mergeMunicipalities(fetched);
+            notifySubscribers();
+          }
         }, (error) => {
           handleFirestoreError(error, OperationType.LIST, PATH);
           notifySubscribers();
