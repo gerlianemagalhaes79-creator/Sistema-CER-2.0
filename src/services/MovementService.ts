@@ -136,18 +136,16 @@ export const MovementService = {
     const cache = getLocalCache();
     saveLocalCache([newMovement, ...cache.filter(m => m.id !== id)]);
 
-    try {
-      await setDoc(doc(db, PATH, id), newMovement);
+    setDoc(doc(db, PATH, id), newMovement)
+      .catch(error => handleFirestoreError(error, OperationType.CREATE, PATH));
 
-      if (movement.type === 'Alta') {
-        await PatientService.updatePatient(movement.patientId, { 
-          status: 'Alta',
-          dischargeDate: movement.date 
-        });
-      }
-    } catch (error) {
-      handleFirestoreError(error, OperationType.CREATE, PATH);
+    if (movement.type === 'Alta') {
+      PatientService.updatePatient(movement.patientId, { 
+        status: 'Alta',
+        dischargeDate: movement.date 
+      }).catch(err => console.error('Error updating patient status on discharge:', err));
     }
+
     return newMovement;
   },
 
@@ -158,11 +156,8 @@ export const MovementService = {
     const updatedCache = cache.map(m => m.id === id ? { ...m, ...updates } : m);
     saveLocalCache(updatedCache);
 
-    try {
-      await updateDoc(doc(db, PATH, id), updates);
-    } catch (error) {
-      handleFirestoreError(error, OperationType.UPDATE, PATH);
-    }
+    updateDoc(doc(db, PATH, id), updates)
+      .catch(error => handleFirestoreError(error, OperationType.UPDATE, PATH));
   },
 
   softDeleteMovement: async (id: string): Promise<void> => {
@@ -177,11 +172,8 @@ export const MovementService = {
     const updatedCache = cache.map(m => m.id === id ? { ...m, ...deleteUpdates } : m);
     saveLocalCache(updatedCache);
 
-    try {
-      await updateDoc(doc(db, PATH, id), deleteUpdates);
-    } catch (error) {
-      handleFirestoreError(error, OperationType.UPDATE, PATH);
-    }
+    updateDoc(doc(db, PATH, id), deleteUpdates)
+      .catch(error => handleFirestoreError(error, OperationType.UPDATE, PATH));
   },
 
   restoreMovement: async (id: string): Promise<void> => {
@@ -194,11 +186,8 @@ export const MovementService = {
     const updatedCache = cache.map(m => m.id === id ? { ...m, ...restoreUpdates } : m);
     saveLocalCache(updatedCache);
 
-    try {
-      await updateDoc(doc(db, PATH, id), restoreUpdates);
-    } catch (error) {
-      handleFirestoreError(error, OperationType.UPDATE, PATH);
-    }
+    updateDoc(doc(db, PATH, id), restoreUpdates)
+      .catch(error => handleFirestoreError(error, OperationType.UPDATE, PATH));
   },
 
   deleteMovementPermanently: async (id: string): Promise<void> => {
@@ -207,10 +196,7 @@ export const MovementService = {
     const cache = getLocalCache();
     saveLocalCache(cache.filter(m => m.id !== id));
 
-    try {
-      await deleteDoc(doc(db, PATH, id));
-    } catch (error) {
-      handleFirestoreError(error, OperationType.DELETE, PATH);
-    }
+    deleteDoc(doc(db, PATH, id))
+      .catch(error => handleFirestoreError(error, OperationType.DELETE, PATH));
   }
 };

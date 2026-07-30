@@ -140,29 +140,21 @@ export const PatientService = {
     const cache = getLocalCache();
     saveLocalCache([newPatient, ...cache.filter(p => p.id !== id)]);
 
-    try {
-      await setDoc(doc(db, PATH, id), newPatient);
-    } catch (error) {
-      handleFirestoreError(error, OperationType.CREATE, PATH);
-      // Even if Firestore throws, patient remains in local cache
-    }
+    setDoc(doc(db, PATH, id), newPatient)
+      .catch(error => handleFirestoreError(error, OperationType.CREATE, PATH));
 
     // Create an automatic 'Entrada' movement record
-    try {
-      await MovementService.addMovement({
-        patientId: newPatient.id,
-        patientName: newPatient.name,
-        medicalRecordNumber: newPatient.medicalRecordNumber,
-        diagnoses: newPatient.diagnoses || [],
-        type: 'Entrada',
-        date: newPatient.entryDate || now.substring(0, 10),
-        professionals: newPatient.professionals || [],
-        responsibleProfessional: auth.currentUser?.email || '',
-        observations: 'Admissão inicial do paciente no sistema'
-      });
-    } catch (err) {
-      console.error('Error creating automatic entry movement:', err);
-    }
+    MovementService.addMovement({
+      patientId: newPatient.id,
+      patientName: newPatient.name,
+      medicalRecordNumber: newPatient.medicalRecordNumber,
+      diagnoses: newPatient.diagnoses || [],
+      type: 'Entrada',
+      date: newPatient.entryDate || now.substring(0, 10),
+      professionals: newPatient.professionals || [],
+      responsibleProfessional: auth.currentUser?.email || '',
+      observations: 'Admissão inicial do paciente no sistema'
+    }).catch(err => console.error('Error creating automatic entry movement:', err));
 
     return newPatient;
   },
@@ -180,11 +172,8 @@ export const PatientService = {
     const updatedCache = cache.map(p => p.id === id ? { ...p, ...updatedData } : p);
     saveLocalCache(updatedCache);
     
-    try {
-      await updateDoc(doc(db, PATH, id), updatedData);
-    } catch (error) {
-      handleFirestoreError(error, OperationType.UPDATE, PATH);
-    }
+    updateDoc(doc(db, PATH, id), updatedData)
+      .catch(error => handleFirestoreError(error, OperationType.UPDATE, PATH));
   },
 
   softDeletePatient: async (id: string): Promise<void> => {
@@ -201,11 +190,8 @@ export const PatientService = {
     const updatedCache = cache.map(p => p.id === id ? { ...p, ...deleteUpdates } : p);
     saveLocalCache(updatedCache);
 
-    try {
-      await updateDoc(doc(db, PATH, id), deleteUpdates);
-    } catch (error) {
-      handleFirestoreError(error, OperationType.UPDATE, PATH);
-    }
+    updateDoc(doc(db, PATH, id), deleteUpdates)
+      .catch(error => handleFirestoreError(error, OperationType.UPDATE, PATH));
   },
 
   restorePatient: async (id: string): Promise<void> => {
@@ -221,11 +207,8 @@ export const PatientService = {
     const updatedCache = cache.map(p => p.id === id ? { ...p, ...restoreUpdates } : p);
     saveLocalCache(updatedCache);
 
-    try {
-      await updateDoc(doc(db, PATH, id), restoreUpdates);
-    } catch (error) {
-      handleFirestoreError(error, OperationType.UPDATE, PATH);
-    }
+    updateDoc(doc(db, PATH, id), restoreUpdates)
+      .catch(error => handleFirestoreError(error, OperationType.UPDATE, PATH));
   },
 
   deletePatientPermanently: async (id: string): Promise<void> => {
@@ -235,11 +218,8 @@ export const PatientService = {
     const cache = getLocalCache();
     saveLocalCache(cache.filter(p => p.id !== id));
 
-    try {
-      await deleteDoc(doc(db, PATH, id));
-    } catch (error) {
-      handleFirestoreError(error, OperationType.DELETE, PATH);
-    }
+    deleteDoc(doc(db, PATH, id))
+      .catch(error => handleFirestoreError(error, OperationType.DELETE, PATH));
   },
 
   calculateAge: (birthDate: string): number => {

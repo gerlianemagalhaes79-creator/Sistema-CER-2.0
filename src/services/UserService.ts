@@ -205,11 +205,9 @@ export const UserService = {
     saveLocalUsersCache(updatedCache);
     notifySubscribers();
 
-    try {
-      await setDoc(doc(db, PATH, id), newUser);
-    } catch (error: any) {
-      handleFirestoreError(error, OperationType.CREATE, PATH);
-    }
+    setDoc(doc(db, PATH, id), newUser)
+      .catch(error => handleFirestoreError(error, OperationType.CREATE, PATH));
+
     return newUser;
   },
 
@@ -229,11 +227,9 @@ export const UserService = {
     saveLocalUsersCache(updatedCache);
     notifySubscribers();
 
-    try {
-      await setDoc(doc(db, PATH, id), updatedUser, { merge: true });
-    } catch (error) {
-      handleFirestoreError(error, OperationType.UPDATE, PATH);
-    }
+    setDoc(doc(db, PATH, id), updatedUser, { merge: true })
+      .catch(error => handleFirestoreError(error, OperationType.UPDATE, PATH));
+
     return updatedUser;
   },
 
@@ -261,11 +257,8 @@ export const UserService = {
     saveLocalUsersCache(updatedCache);
     notifySubscribers();
 
-    try {
-      await setDoc(doc(db, PATH, id), inactiveUser, { merge: true });
-    } catch (error) {
-      handleFirestoreError(error, OperationType.UPDATE, PATH);
-    }
+    setDoc(doc(db, PATH, id), inactiveUser, { merge: true })
+      .catch(error => handleFirestoreError(error, OperationType.UPDATE, PATH));
   },
 
   loginDirectly: (user: User): User => {

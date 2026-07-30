@@ -151,11 +151,8 @@ export const DiagnosisService = {
     saveLocalCache(updatedCache);
     notifySubscribers();
 
-    try {
-      await setDoc(doc(db, PATH, id), newDiagnosis);
-    } catch (error) {
-      handleFirestoreError(error, OperationType.CREATE, PATH);
-    }
+    setDoc(doc(db, PATH, id), newDiagnosis)
+      .catch(error => handleFirestoreError(error, OperationType.CREATE, PATH));
 
     return newDiagnosis;
   },
@@ -176,11 +173,8 @@ export const DiagnosisService = {
     saveLocalCache(updatedCache);
     notifySubscribers();
 
-    try {
-      await setDoc(doc(db, PATH, id), updated, { merge: true });
-    } catch (error) {
-      handleFirestoreError(error, OperationType.UPDATE, PATH);
-    }
+    setDoc(doc(db, PATH, id), updated, { merge: true })
+      .catch(error => handleFirestoreError(error, OperationType.UPDATE, PATH));
   },
 
   deleteDiagnosis: async (id: string): Promise<void> => {
@@ -200,11 +194,8 @@ export const DiagnosisService = {
     saveLocalCache(updatedCache);
     notifySubscribers();
 
-    try {
-      await setDoc(doc(db, PATH, id), inactive, { merge: true });
-    } catch (error) {
-      handleFirestoreError(error, OperationType.UPDATE, PATH);
-    }
+    setDoc(doc(db, PATH, id), inactive, { merge: true })
+      .catch(error => handleFirestoreError(error, OperationType.UPDATE, PATH));
   }
 };
 

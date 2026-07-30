@@ -143,11 +143,9 @@ export const ProfessionalService = {
     saveLocalCache(updatedCache);
     notifySubscribers();
 
-    try {
-      await setDoc(doc(db, PATH, id), newProfessional);
-    } catch (error) {
-      handleFirestoreError(error, OperationType.CREATE, PATH);
-    }
+    // Async sync to Firestore
+    setDoc(doc(db, PATH, id), newProfessional)
+      .catch(error => handleFirestoreError(error, OperationType.CREATE, PATH));
 
     return newProfessional;
   },
@@ -168,11 +166,8 @@ export const ProfessionalService = {
     saveLocalCache(updatedCache);
     notifySubscribers();
 
-    try {
-      await setDoc(doc(db, PATH, id), updated, { merge: true });
-    } catch (error) {
-      handleFirestoreError(error, OperationType.UPDATE, PATH);
-    }
+    setDoc(doc(db, PATH, id), updated, { merge: true })
+      .catch(error => handleFirestoreError(error, OperationType.UPDATE, PATH));
   },
 
   deleteProfessional: async (id: string): Promise<void> => {
@@ -192,11 +187,8 @@ export const ProfessionalService = {
     saveLocalCache(updatedCache);
     notifySubscribers();
 
-    try {
-      await setDoc(doc(db, PATH, id), inactive, { merge: true });
-    } catch (error) {
-      handleFirestoreError(error, OperationType.UPDATE, PATH);
-    }
+    setDoc(doc(db, PATH, id), inactive, { merge: true })
+      .catch(error => handleFirestoreError(error, OperationType.UPDATE, PATH));
   }
 };
 
