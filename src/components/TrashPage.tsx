@@ -30,8 +30,42 @@ export const TrashPage = ({ currentUser }: { currentUser: User }) => {
     };
   }, []);
 
+  const getRetentionInfo = (deletedAt: string) => {
+    if (!deletedAt) return { isExpired: false, remainingDays: 5, text: 'Restam 5 dias', badgeClass: 'bg-emerald-100 text-emerald-800 border-emerald-200' };
+    
+    const deletedDate = new Date(deletedAt);
+    const now = new Date();
+    const diffMs = now.getTime() - deletedDate.getTime();
+    const diffDays = diffMs / (1000 * 60 * 60 * 24);
+    
+    const maxDays = 5;
+    const daysLeft = Math.ceil(maxDays - diffDays);
+    
+    if (diffDays >= maxDays) {
+      return {
+        isExpired: true,
+        remainingDays: 0,
+        text: 'Expirado (>5 dias)',
+        badgeClass: 'bg-red-100 text-red-700 border-red-200'
+      };
+    }
+    
+    return {
+      isExpired: false,
+      remainingDays: daysLeft,
+      text: daysLeft === 1 ? 'Resta 1 dia' : `Restam ${daysLeft} dias`,
+      badgeClass: daysLeft <= 2 ? 'bg-amber-100 text-amber-800 border-amber-200' : 'bg-emerald-100 text-emerald-800 border-emerald-200'
+    };
+  };
+
   const handleRestorePatient = async (p: Patient) => {
-    if (window.confirm(`Deseja restaurar o paciente "${p.name}"?`)) {
+    const retention = getRetentionInfo(p.deletedAt || '');
+    if (retention.isExpired) {
+      alert(`O prazo de 5 dias para restaurar o paciente "${p.name}" expirou. Apenas a exclusão definitiva é permitida.`);
+      return;
+    }
+
+    if (window.confirm(`Deseja restaurar o paciente "${p.name}"? (${retention.text} para restauração)`)) {
       try {
         await PatientService.restorePatient(p.id);
       } catch (error: any) {
@@ -67,7 +101,13 @@ export const TrashPage = ({ currentUser }: { currentUser: User }) => {
   };
 
   const handleRestoreMovement = async (m: Movement) => {
-    if (window.confirm(`Deseja restaurar esta movimentação de "${m.patientName}"?`)) {
+    const retention = getRetentionInfo(m.deletedAt || '');
+    if (retention.isExpired) {
+      alert(`O prazo de 5 dias para restaurar esta movimentação expirou. Apenas a exclusão definitiva é permitida.`);
+      return;
+    }
+
+    if (window.confirm(`Deseja restaurar esta movimentação de "${m.patientName}"? (${retention.text} para restauração)`)) {
       try {
         await MovementService.restoreMovement(m.id);
         
@@ -82,12 +122,6 @@ export const TrashPage = ({ currentUser }: { currentUser: User }) => {
 
         // Se restaurar um absenteísmo, incrementa o contador
         if (m.type === 'Absenteísmo') {
-          // Nota: Precisamos buscar o paciente para saber o contador atual se quisermos alertar,
-          // mas aqui vamos apenas atualizar o contador. 
-          // Idealmente buscaríamos o paciente primeiro ou usaríamos increment() do firestore.
-          // Para consistência com App.tsx, vou apenas atualizar o contador.
-          // Como não temos a lista de pacientes aqui, vamos usar a função de atualização.
-          // O PatientService já trata o updatedAt/updatedBy.
           const patients = await PatientService.getPatients();
           const patient = patients.find(p => p.id === m.patientId);
           if (patient) {
@@ -157,29 +191,27 @@ export const TrashPage = ({ currentUser }: { currentUser: User }) => {
     );
   });
 
-    const isOldEnough = (deletedAt: string) => {
-      const deletedDate = new Date(deletedAt);
-      const now = new Date();
-      const diffTime = Math.abs(now.getTime() - deletedDate.getTime());
-      const diffDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24));
-      return diffDays > 3;
-    };
+  const StatusColumn = ({ deletedAt }: { deletedAt: string }) => {
+    const info = getRetentionInfo(deletedAt);
+    const dateFormatted = deletedAt ? new Date(deletedAt).toLocaleDateString('pt-BR', {
+      day: '2-digit',
+      month: '2-digit',
+      year: 'numeric',
+      hour: '2-digit',
+      minute: '2-digit'
+    }) : '—';
 
-    const StatusColumn = ({ deletedAt }: { deletedAt: string }) => {
-      const oldEnough = isOldEnough(deletedAt);
-      return (
-        <div className="flex flex-col items-center">
-          <p className="text-[11px] font-bold text-gray-500">
-            {new Date(deletedAt).toLocaleDateString('pt-BR')}
-          </p>
-          {oldEnough ? (
-            <span className="text-[8px] font-black uppercase text-red-500 tracking-tighter">Pronto para limpeza</span>
-          ) : (
-            <span className="text-[8px] font-black uppercase text-amber-500 tracking-tighter">Em carência (3 dias)</span>
-          )}
-        </div>
-      );
-    };
+    return (
+      <div className="flex flex-col items-center gap-1">
+        <p className="text-[11px] font-bold text-gray-600">
+          {dateFormatted}
+        </p>
+        <span className={`text-[10px] font-black px-2.5 py-0.5 rounded-full border ${info.badgeClass}`}>
+          {info.text}
+        </span>
+      </div>
+    );
+  };
 
   return (
     <motion.div 
@@ -192,7 +224,7 @@ export const TrashPage = ({ currentUser }: { currentUser: User }) => {
           <h2 className="text-2xl font-black text-[#064e3b] tracking-tight">Lixeira</h2>
           <p className="text-sm font-medium text-gray-500 italic flex items-center gap-2">
             <AlertCircle size={14} className="text-amber-500" />
-            Itens removidos recentemente. Restaure ou exclua definitivamente.
+            Pacientes e movimentações excluídos podem ser restaurados em até 5 dias a contar da data de exclusão.
           </p>
         </div>
       </div>
@@ -235,79 +267,95 @@ export const TrashPage = ({ currentUser }: { currentUser: User }) => {
             </thead>
             <tbody className="divide-y divide-gray-50">
               {activeTab === 'patients' ? (
-                filteredPatients.map(p => (
-                  <tr key={p.id} className="hover:bg-red-50/10 transition-colors">
-                    <td className="px-6 py-4">
-                      <div className="flex items-center gap-3">
-                        <div className="h-10 w-10 rounded-xl bg-gray-50 flex items-center justify-center text-gray-400">
-                          <UserIcon size={20} />
+                filteredPatients.map(p => {
+                  const retention = getRetentionInfo(p.deletedAt || '');
+                  return (
+                    <tr key={p.id} className="hover:bg-red-50/10 transition-colors">
+                      <td className="px-6 py-4">
+                        <div className="flex items-center gap-3">
+                          <div className="h-10 w-10 rounded-xl bg-gray-50 flex items-center justify-center text-gray-400">
+                            <UserIcon size={20} />
+                          </div>
+                          <div>
+                            <p className="text-sm font-bold text-gray-900">{p.name}</p>
+                            <p className="text-[10px] font-medium text-gray-400">Prontuário: {p.medicalRecordNumber}</p>
+                          </div>
                         </div>
-                        <div>
-                          <p className="text-sm font-bold text-gray-900">{p.name}</p>
-                          <p className="text-[10px] font-medium text-gray-400">Prontuário: {p.medicalRecordNumber}</p>
+                      </td>
+                      <td className="px-6 py-4 text-center">
+                        <StatusColumn deletedAt={p.deletedAt!} />
+                      </td>
+                      <td className="px-6 py-4">
+                        <div className="flex items-center justify-center gap-2">
+                          <button 
+                            onClick={() => handleRestorePatient(p)}
+                            disabled={retention.isExpired}
+                            className={`p-2 rounded-lg transition-all ${
+                              retention.isExpired 
+                                ? 'text-gray-300 cursor-not-allowed' 
+                                : 'text-emerald-600 hover:bg-emerald-50'
+                            }`}
+                            title={retention.isExpired ? 'Prazo de 5 dias expirado' : 'Restaurar Paciente'}
+                          >
+                            <RotateCcw size={16} />
+                          </button>
+                          <button 
+                            onClick={() => handleDeletePatientPermanently(p)}
+                            className="p-2 text-red-600 hover:bg-red-50 rounded-lg transition-all"
+                            title="Excluir Permanentemente"
+                          >
+                            <Trash2 size={16} />
+                          </button>
                         </div>
-                      </div>
-                    </td>
-                    <td className="px-6 py-4 text-center">
-                      <StatusColumn deletedAt={p.deletedAt!} />
-                    </td>
-                    <td className="px-6 py-4">
-                      <div className="flex items-center justify-center gap-2">
-                        <button 
-                          onClick={() => handleRestorePatient(p)}
-                          className="p-2 text-emerald-600 hover:bg-emerald-50 rounded-lg transition-all"
-                          title="Restaurar"
-                        >
-                          <RotateCcw size={16} />
-                        </button>
-                        <button 
-                          onClick={() => handleDeletePatientPermanently(p)}
-                          className="p-2 text-red-600 hover:bg-red-50 rounded-lg transition-all"
-                          title="Excluir Permanentemente"
-                        >
-                          <Trash2 size={16} />
-                        </button>
-                      </div>
-                    </td>
-                  </tr>
-                ))
+                      </td>
+                    </tr>
+                  );
+                })
               ) : (
-                filteredMovements.map(m => (
-                  <tr key={m.id} className="hover:bg-red-50/10 transition-colors">
-                    <td className="px-6 py-4">
-                      <div className="flex items-center gap-3">
-                        <div className="h-10 w-10 rounded-xl bg-gray-50 flex items-center justify-center text-gray-400">
-                          <Activity size={20} />
+                filteredMovements.map(m => {
+                  const retention = getRetentionInfo(m.deletedAt || '');
+                  return (
+                    <tr key={m.id} className="hover:bg-red-50/10 transition-colors">
+                      <td className="px-6 py-4">
+                        <div className="flex items-center gap-3">
+                          <div className="h-10 w-10 rounded-xl bg-gray-50 flex items-center justify-center text-gray-400">
+                            <Activity size={20} />
+                          </div>
+                          <div>
+                            <p className="text-sm font-bold text-gray-900">{m.type} - {m.patientName}</p>
+                            <p className="text-[10px] font-medium text-gray-400">Data original: {new Date(m.date).toLocaleDateString('pt-BR')}</p>
+                          </div>
                         </div>
-                        <div>
-                          <p className="text-sm font-bold text-gray-900">{m.type} - {m.patientName}</p>
-                          <p className="text-[10px] font-medium text-gray-400">Data original: {new Date(m.date).toLocaleDateString('pt-BR')}</p>
+                      </td>
+                      <td className="px-6 py-4 text-center">
+                        <StatusColumn deletedAt={m.deletedAt!} />
+                      </td>
+                      <td className="px-6 py-4">
+                        <div className="flex items-center justify-center gap-2">
+                          <button 
+                            onClick={() => handleRestoreMovement(m)}
+                            disabled={retention.isExpired}
+                            className={`p-2 rounded-lg transition-all ${
+                              retention.isExpired 
+                                ? 'text-gray-300 cursor-not-allowed' 
+                                : 'text-emerald-600 hover:bg-emerald-50'
+                            }`}
+                            title={retention.isExpired ? 'Prazo de 5 dias expirado' : 'Restaurar Movimentação'}
+                          >
+                            <RotateCcw size={16} />
+                          </button>
+                          <button 
+                            onClick={() => handleDeleteMovementPermanently(m)}
+                            className="p-2 text-red-600 hover:bg-red-50 rounded-lg transition-all"
+                            title="Excluir Permanentemente"
+                          >
+                            <Trash2 size={16} />
+                          </button>
                         </div>
-                      </div>
-                    </td>
-                    <td className="px-6 py-4 text-center">
-                      <StatusColumn deletedAt={m.deletedAt!} />
-                    </td>
-                    <td className="px-6 py-4">
-                      <div className="flex items-center justify-center gap-2">
-                        <button 
-                          onClick={() => handleRestoreMovement(m)}
-                          className="p-2 text-emerald-600 hover:bg-emerald-50 rounded-lg transition-all"
-                          title="Restaurar"
-                        >
-                          <RotateCcw size={16} />
-                        </button>
-                        <button 
-                          onClick={() => handleDeleteMovementPermanently(m)}
-                          className="p-2 text-red-600 hover:bg-red-50 rounded-lg transition-all"
-                          title="Excluir Permanentemente"
-                        >
-                          <Trash2 size={16} />
-                        </button>
-                      </div>
-                    </td>
-                  </tr>
-                ))
+                      </td>
+                    </tr>
+                  );
+                })
               )}
               {((activeTab === 'patients' && filteredPatients.length === 0) || 
                 (activeTab === 'movements' && filteredMovements.length === 0)) && (

@@ -72,75 +72,197 @@ export const DEFAULT_USERS: User[] = [
 ];
 
 const LOCAL_STORAGE_KEY = 'cer_logged_user';
+const CACHE_KEY = 'cer_users_cache_v2';
+
+const listeners = new Set<(users: User[]) => void>();
+
+const getLocalUsersCache = (): User[] => {
+  try {
+    const stored = localStorage.getItem(CACHE_KEY);
+    if (stored) {
+      const parsed = JSON.parse(stored);
+      if (Array.isArray(parsed) && parsed.length > 0) {
+        // Ensure default users exist if not already in parsed
+        const map = new Map<string, User>();
+        DEFAULT_USERS.forEach(u => map.set(u.id, u));
+        parsed.forEach(u => map.set(u.id, u));
+        return Array.from(map.values());
+      }
+    }
+  } catch (e) {
+    console.error('Error reading users cache:', e);
+  }
+  return DEFAULT_USERS;
+};
+
+const saveLocalUsersCache = (users: User[]) => {
+  try {
+    localStorage.setItem(CACHE_KEY, JSON.stringify(users));
+  } catch (e) {
+    console.error('Error saving users cache:', e);
+  }
+};
+
+const notifySubscribers = () => {
+  const activeUsers = UserService.getActiveUsers();
+  listeners.forEach(cb => {
+    try {
+      cb(activeUsers);
+    } catch (e) {
+      console.error('Subscriber notification error:', e);
+    }
+  });
+};
+
+const mergeUsers = (firestoreDocs: User[]): User[] => {
+  const localCache = getLocalUsersCache();
+  const map = new Map<string, User>();
+
+  // 1. Base default users
+  DEFAULT_USERS.forEach(u => map.set(u.id, u));
+
+  // 2. Overlay local cache
+  localCache.forEach(u => map.set(u.id, u));
+
+  // 3. Overlay Firestore documents (preserving fields if doc is partial)
+  firestoreDocs.forEach(u => {
+    const existing = map.get(u.id);
+    map.set(u.id, { ...(existing || {}), ...u });
+  });
+
+  const mergedAll = Array.from(map.values());
+  saveLocalUsersCache(mergedAll);
+
+  return mergedAll.filter(u => u.status !== 'Inactive');
+};
 
 export const UserService = {
+  getActiveUsers: (): User[] => {
+    const cache = getLocalUsersCache();
+    return cache.filter(u => u.status !== 'Inactive');
+  },
+
   getUsers: async (): Promise<User[]> => {
     const PATH = 'usuarios';
+    const cachedActive = UserService.getActiveUsers();
     try {
-      const q = query(collection(db, PATH), where('status', '==', 'Active'));
+      const q = query(collection(db, PATH));
       const snapshot = await getDocs(q);
-      const fetchedUsers = snapshot.docs.map(doc => doc.data() as User);
-      if (fetchedUsers.length === 0) {
-        return DEFAULT_USERS;
+      const fetched = snapshot.docs.map(doc => doc.data() as User);
+      if (fetched.length > 0) {
+        return mergeUsers(fetched);
       }
-      return fetchedUsers;
+      return cachedActive;
     } catch (error) {
-      console.warn('Could not fetch users from Firestore, using default preset users:', error);
-      return DEFAULT_USERS;
+      return cachedActive;
     }
   },
 
   subscribeToUsers: (callback: (users: User[]) => void) => {
+    listeners.add(callback);
+    
+    // Immediately emit local active users
+    callback(UserService.getActiveUsers());
+
     const PATH = 'usuarios';
     try {
-      const q = query(collection(db, PATH), where('status', '==', 'Active'));
-      return onSnapshot(q, (snapshot) => {
+      const q = query(collection(db, PATH));
+      const unsubscribe = onSnapshot(q, (snapshot) => {
         const fetched = snapshot.docs.map(doc => doc.data() as User);
-        if (fetched.length === 0) {
-          callback(DEFAULT_USERS);
-        } else {
-          callback(fetched);
-        }
+        const active = mergeUsers(fetched);
+        callback(active);
       }, (error) => {
-        console.warn('Subscription error, falling back to default users:', error);
-        callback(DEFAULT_USERS);
+        console.warn('Subscription error on usuarios:', error);
+        callback(UserService.getActiveUsers());
       });
+
+      return () => {
+        listeners.delete(callback);
+        unsubscribe();
+      };
     } catch (e) {
-      callback(DEFAULT_USERS);
-      return () => {};
+      callback(UserService.getActiveUsers());
+      return () => {
+        listeners.delete(callback);
+      };
     }
   },
 
-  addUser: async (user: Omit<User, 'id' | 'createdAt'>): Promise<void> => {
+  addUser: async (user: Omit<User, 'id' | 'createdAt'>): Promise<User> => {
     const PATH = 'usuarios';
+    const id = `user-${Date.now()}-${Math.random().toString(36).substring(2, 7)}`;
+    const newUser: User = {
+      ...user,
+      id,
+      password: user.password || '123',
+      status: user.status || 'Active',
+      createdAt: new Date().toISOString(),
+    };
+
+    // Update local cache immediately
+    const local = getLocalUsersCache();
+    const updatedCache = [newUser, ...local.filter(u => u.id !== id)];
+    saveLocalUsersCache(updatedCache);
+    notifySubscribers();
+
     try {
-      const id = crypto.randomUUID();
-      const newUser: User = {
-        ...user,
-        id,
-        password: user.password || '123',
-        createdAt: new Date().toISOString(),
-      };
       await setDoc(doc(db, PATH, id), newUser);
     } catch (error: any) {
       handleFirestoreError(error, OperationType.CREATE, PATH);
     }
+    return newUser;
   },
 
-  updateUser: async (id: string, updates: Partial<User>) => {
+  updateUser: async (id: string, updates: Partial<User>): Promise<User> => {
     const PATH = 'usuarios';
+    const local = getLocalUsersCache();
+    const existing = local.find(u => u.id === id) || DEFAULT_USERS.find(u => u.id === id);
+    const updatedUser: User = {
+      ...(existing || { id, name: '', email: '', role: '', accessType: AccessType.Profissional, status: 'Active' }),
+      createdAt: existing?.createdAt || new Date().toISOString(),
+      ...updates,
+      id
+    };
+
+    const exists = local.some(u => u.id === id);
+    const updatedCache = exists ? local.map(u => u.id === id ? updatedUser : u) : [...local, updatedUser];
+    saveLocalUsersCache(updatedCache);
+    notifySubscribers();
+
     try {
-      await updateDoc(doc(db, PATH, id), updates);
-      return { ...updates, id } as User;
+      await setDoc(doc(db, PATH, id), updatedUser, { merge: true });
     } catch (error) {
       handleFirestoreError(error, OperationType.UPDATE, PATH);
     }
+    return updatedUser;
   },
 
-  deleteUser: async (id: string) => {
+  deleteUser: async (id: string): Promise<void> => {
     const PATH = 'usuarios';
+
+    const local = getLocalUsersCache();
+    const existing = local.find(u => u.id === id) || DEFAULT_USERS.find(u => u.id === id);
+
+    const inactiveUser: User = {
+      ...(existing || { 
+        id, 
+        name: 'Usuário', 
+        email: '', 
+        role: '', 
+        accessType: AccessType.Profissional, 
+        createdAt: new Date().toISOString() 
+      }),
+      status: 'Inactive',
+      deletedAt: new Date().toISOString()
+    };
+
+    const exists = local.some(u => u.id === id);
+    const updatedCache = exists ? local.map(u => u.id === id ? inactiveUser : u) : [...local, inactiveUser];
+    saveLocalUsersCache(updatedCache);
+    notifySubscribers();
+
     try {
-      await updateDoc(doc(db, PATH, id), { status: 'Inactive' });
+      await setDoc(doc(db, PATH, id), inactiveUser, { merge: true });
     } catch (error) {
       handleFirestoreError(error, OperationType.UPDATE, PATH);
     }

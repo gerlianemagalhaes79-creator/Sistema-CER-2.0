@@ -18,7 +18,7 @@ import { motion, AnimatePresence } from 'motion/react';
 import { User, AccessType } from '../types';
 import { UserService } from '../services/UserService';
 
-export const UsersPage = ({ onReload }: { onReload: () => void }) => {
+export const UsersPage = ({ currentUser, onReload }: { currentUser?: User | null, onReload: () => void }) => {
   const [users, setUsers] = useState<User[]>([]);
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [editingUser, setEditingUser] = useState<User | null>(null);
@@ -52,6 +52,10 @@ export const UsersPage = ({ onReload }: { onReload: () => void }) => {
   };
 
   const handleDeleteUser = async (u: User) => {
+    if (currentUser && (currentUser.id === u.id || (currentUser.email && currentUser.email === u.email))) {
+      alert('Você não pode apagar o seu próprio usuário enquanto estiver conectado com ele.');
+      return;
+    }
     if (window.confirm(`Tem certeza que deseja apagar o usuário ${u.name}? Esta ação não pode ser desfeita.`)) {
       try {
         await UserService.deleteUser(u.id);
@@ -148,8 +152,8 @@ export const UsersPage = ({ onReload }: { onReload: () => void }) => {
                       {u.accessType}
                     </span>
                   </td>
-                  <td className="px-6 py-4 text-xs font-mono font-bold text-gray-600">
-                    {u.password || '123'}
+                  <td className="px-6 py-4 text-xs font-mono font-bold text-gray-400">
+                    ••••••
                   </td>
                   <td className="px-6 py-4">
                     <div className="flex justify-center">

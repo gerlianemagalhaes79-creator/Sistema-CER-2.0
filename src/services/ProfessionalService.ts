@@ -2,69 +2,202 @@ import {
   collection, 
   doc, 
   getDocs, 
-  updateDoc, 
   query, 
-  where,
   onSnapshot,
-  setDoc,
-  orderBy
+  setDoc
 } from 'firebase/firestore';
 import { db, handleFirestoreError, OperationType } from '../lib/firebase';
-import { Professional } from '../types';
+import { Professional, PROFESSIONALS } from '../types';
+
+const CACHE_KEY = 'cer_professionals_cache_v1';
+
+const DEFAULT_PROFESSIONALS: Professional[] = PROFESSIONALS.map((proName, index) => ({
+  id: `default-pro-${index + 1}`,
+  name: proName,
+  area: proName.includes('(') ? proName.split('(')[1]?.replace(')', '') || 'Profissional' : 'Profissional',
+  status: 'Active',
+  createdAt: new Date().toISOString()
+}));
+
+const listeners = new Set<(professionals: Professional[]) => void>();
+
+const getLocalCache = (): Professional[] => {
+  try {
+    const data = localStorage.getItem(CACHE_KEY);
+    if (data) {
+      const parsed = JSON.parse(data);
+      if (Array.isArray(parsed) && parsed.length > 0) {
+        return parsed;
+      }
+    }
+  } catch (e) {
+    console.error('Error reading professional cache:', e);
+  }
+  return DEFAULT_PROFESSIONALS;
+};
+
+const saveLocalCache = (items: Professional[]) => {
+  try {
+    localStorage.setItem(CACHE_KEY, JSON.stringify(items));
+  } catch (e) {
+    console.error('Error saving professional cache:', e);
+  }
+};
+
+const getActiveProfessionals = (): Professional[] => {
+  const cache = getLocalCache();
+  return cache
+    .filter(p => p.status === 'Active')
+    .sort((a, b) => (a.name || '').localeCompare(b.name || '', 'pt-BR'));
+};
+
+const notifySubscribers = () => {
+  const active = getActiveProfessionals();
+  listeners.forEach(cb => {
+    try {
+      cb(active);
+    } catch (e) {
+      console.error('Professional subscriber notification error:', e);
+    }
+  });
+};
+
+const mergeProfessionals = (firestoreDocs: Professional[]): Professional[] => {
+  const localCache = getLocalCache();
+  const map = new Map<string, Professional>();
+
+  DEFAULT_PROFESSIONALS.forEach(p => map.set(p.id, p));
+  localCache.forEach(p => map.set(p.id, p));
+  firestoreDocs.forEach(p => {
+    if (p && p.id) {
+      const existing = map.get(p.id);
+      map.set(p.id, { ...(existing || {}), ...p });
+    }
+  });
+
+  const merged = Array.from(map.values());
+  saveLocalCache(merged);
+  return merged.filter(p => p.status === 'Active').sort((a, b) => (a.name || '').localeCompare(b.name || '', 'pt-BR'));
+};
 
 export const ProfessionalService = {
   getProfessionals: async (): Promise<Professional[]> => {
     const PATH = 'profissionais';
     try {
-      const q = query(collection(db, PATH), where('status', '==', 'Active'), orderBy('name', 'asc'));
+      const q = query(collection(db, PATH));
       const snapshot = await getDocs(q);
-      return snapshot.docs.map(doc => doc.data() as Professional);
+      const docs = snapshot.docs.map(doc => doc.data() as Professional);
+      if (docs.length > 0) {
+        return mergeProfessionals(docs);
+      }
+      return getActiveProfessionals();
     } catch (error) {
       handleFirestoreError(error, OperationType.LIST, PATH);
-      return [];
+      return getActiveProfessionals();
     }
   },
 
   subscribeToProfessionals: (callback: (professionals: Professional[]) => void) => {
-    const PATH = 'profissionais';
-    const q = query(collection(db, PATH), where('status', '==', 'Active'), orderBy('name', 'asc'));
-    return onSnapshot(q, (snapshot) => {
-      callback(snapshot.docs.map(doc => doc.data() as Professional));
-    }, (error) => {
-      handleFirestoreError(error, OperationType.LIST, PATH);
-    });
-  },
+    listeners.add(callback);
+    
+    // Emit active items immediately
+    callback(getActiveProfessionals());
 
-  addProfessional: async (professional: Omit<Professional, 'id' | 'createdAt'>): Promise<void> => {
     const PATH = 'profissionais';
     try {
-      const id = crypto.randomUUID();
-      const newProfessional: Professional = {
-        ...professional,
-        id,
-        createdAt: new Date().toISOString(),
+      const q = query(collection(db, PATH));
+      const unsubscribe = onSnapshot(q, (snapshot) => {
+        const fetched = snapshot.docs.map(doc => doc.data() as Professional);
+        const active = mergeProfessionals(fetched);
+        callback(active);
+      }, (error) => {
+        handleFirestoreError(error, OperationType.LIST, PATH);
+        callback(getActiveProfessionals());
+      });
+
+      return () => {
+        listeners.delete(callback);
+        unsubscribe();
       };
+    } catch (e) {
+      callback(getActiveProfessionals());
+      return () => {
+        listeners.delete(callback);
+      };
+    }
+  },
+
+  addProfessional: async (professional: Omit<Professional, 'id' | 'createdAt'>): Promise<Professional> => {
+    const PATH = 'profissionais';
+    const id = typeof crypto !== 'undefined' && crypto.randomUUID 
+      ? crypto.randomUUID() 
+      : `pro-${Date.now()}-${Math.random().toString(36).substring(2, 7)}`;
+      
+    const newProfessional: Professional = {
+      ...professional,
+      id,
+      createdAt: new Date().toISOString(),
+    };
+
+    const cache = getLocalCache();
+    const updatedCache = [newProfessional, ...cache.filter(p => p.id !== id)];
+    saveLocalCache(updatedCache);
+    notifySubscribers();
+
+    try {
       await setDoc(doc(db, PATH, id), newProfessional);
     } catch (error) {
       handleFirestoreError(error, OperationType.CREATE, PATH);
     }
+
+    return newProfessional;
   },
 
-  updateProfessional: async (id: string, updates: Partial<Professional>) => {
+  updateProfessional: async (id: string, updates: Partial<Professional>): Promise<void> => {
     const PATH = 'profissionais';
+    const cache = getLocalCache();
+    const existing = cache.find(p => p.id === id) || DEFAULT_PROFESSIONALS.find(p => p.id === id);
+    const updated: Professional = {
+      ...(existing || { id, name: '', area: '', status: 'Active', createdAt: new Date().toISOString() }),
+      ...updates
+    };
+
+    const updatedCache = cache.some(p => p.id === id) 
+      ? cache.map(p => p.id === id ? updated : p) 
+      : [...cache, updated];
+
+    saveLocalCache(updatedCache);
+    notifySubscribers();
+
     try {
-      await updateDoc(doc(db, PATH, id), updates);
+      await setDoc(doc(db, PATH, id), updated, { merge: true });
     } catch (error) {
       handleFirestoreError(error, OperationType.UPDATE, PATH);
     }
   },
 
-  deleteProfessional: async (id: string) => {
+  deleteProfessional: async (id: string): Promise<void> => {
     const PATH = 'profissionais';
+    const cache = getLocalCache();
+    const existing = cache.find(p => p.id === id) || DEFAULT_PROFESSIONALS.find(p => p.id === id);
+
+    const inactive: Professional = {
+      ...(existing || { id, name: '', area: '', status: 'Inactive', createdAt: new Date().toISOString() }),
+      status: 'Inactive'
+    };
+
+    const updatedCache = cache.some(p => p.id === id) 
+      ? cache.map(p => p.id === id ? inactive : p) 
+      : [...cache, inactive];
+
+    saveLocalCache(updatedCache);
+    notifySubscribers();
+
     try {
-      await updateDoc(doc(db, PATH, id), { status: 'Inactive' });
+      await setDoc(doc(db, PATH, id), inactive, { merge: true });
     } catch (error) {
       handleFirestoreError(error, OperationType.UPDATE, PATH);
     }
   }
 };
+

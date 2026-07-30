@@ -1309,7 +1309,7 @@ const PatientsPage = ({
   };
 
   const handleDelete = async (id: string) => {
-    if (window.confirm('Deseja realmente enviar este paciente para a lixeira?')) {
+    if (window.confirm('Deseja realmente enviar este paciente para a lixeira? (Você poderá restaurá-lo na Lixeira em até 5 dias)')) {
       try {
         await PatientService.softDeletePatient(id);
       } catch (error: any) {
@@ -1984,7 +1984,7 @@ export default function App() {
       case 'municipalities': return currentUser.accessType === 'Administrador' || currentUser.accessType === 'Coordenação' || currentUser.accessType === 'Recepção';
       case 'diagnoses': return currentUser.accessType === 'Administrador' || currentUser.accessType === 'Coordenação' || currentUser.accessType === 'Recepção';
       case 'trash': return currentUser.accessType === 'Administrador' || currentUser.accessType === 'Coordenação';
-      case 'users': return false;
+      case 'users': return currentUser.accessType === 'Administrador' || currentUser.accessType === 'Coordenação';
       default: return false;
     }
   };
@@ -2187,7 +2187,7 @@ export default function App() {
               <DiagnosesPage />
             )}
             {currentPage === 'users' && canAccess('users') && (
-              <UsersPage onReload={() => {}} />
+              <UsersPage currentUser={currentUser} onReload={() => {}} />
             )}
             {currentPage === 'trash' && canAccess('trash') && (
               <TrashPage currentUser={currentUser} />
@@ -2357,7 +2357,7 @@ const LoginPage = ({ onLogin }: { onLogin: (user: User) => void }) => {
         ) : (
           <div className="space-y-3">
             <p className="text-xs font-bold text-gray-500 mb-2 text-center">
-              Selecione um usuário para preencher o login e senha (Senha padrão: <span className="font-mono text-emerald-700 font-black">123</span>):
+              Selecione um usuário para selecionar o perfil:
             </p>
             <div className="space-y-2.5 max-h-72 overflow-y-auto pr-1">
               {usersList.map((user) => (
@@ -2373,7 +2373,7 @@ const LoginPage = ({ onLogin }: { onLogin: (user: User) => void }) => {
                     <div>
                       <p className="font-extrabold text-sm text-gray-800 group-hover:text-[#064e3b]">{user.name}</p>
                       <p className="text-xs text-gray-500 font-medium">
-                        Senha: <span className="font-mono font-bold text-emerald-800">{user.password || '123'}</span>
+                        {user.email || user.accessType}
                       </p>
                     </div>
                   </div>

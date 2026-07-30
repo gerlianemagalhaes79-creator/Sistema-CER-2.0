@@ -14,6 +14,7 @@ export interface User {
   status: 'Active' | 'Inactive';
   password?: string;
   createdAt: string;
+  deletedAt?: string | null;
 }
 
 export type MovementType = 'Entrada' | 'Alta' | 'Transferência' | 'Mudança de profissional' | 'Atualização cadastral' | 'Atendimento' | 'Absenteísmo';
