@@ -216,10 +216,17 @@ export const UserService = {
     const PATH = 'usuarios';
     const local = getLocalUsersCache();
     const existing = local.find(u => u.id === id) || DEFAULT_USERS.find(u => u.id === id);
+
+    // If password in updates is empty string or undefined, preserve existing password!
+    const cleanUpdates = { ...updates };
+    if (cleanUpdates.password !== undefined && (!cleanUpdates.password || !cleanUpdates.password.trim())) {
+      delete cleanUpdates.password;
+    }
+
     const updatedUser: User = {
       ...(existing || { id, name: '', email: '', role: '', accessType: AccessType.Profissional, status: 'Active' }),
       createdAt: existing?.createdAt || new Date().toISOString(),
-      ...updates,
+      ...cleanUpdates,
       id
     };
 
@@ -353,16 +360,69 @@ export const UserService = {
     return null;
   },
 
-  changePassword: async (current: string, newPass: string): Promise<boolean> => {
-    try {
-      if (auth.currentUser) {
-        await updatePassword(auth.currentUser, newPass);
+  changePassword: async (userId: string, currentPass: string, newPass: string): Promise<boolean> => {
+    const PATH = 'usuarios';
+    const local = getLocalUsersCache();
+    let existing = local.find(u => u.id === userId) || DEFAULT_USERS.find(u => u.id === userId);
+
+    if (!existing) {
+      try {
+        const userDoc = await getDoc(doc(db, PATH, userId));
+        if (userDoc.exists()) {
+          existing = userDoc.data() as User;
+        }
+      } catch (e) {
+        console.error('Error fetching user for password change:', e);
       }
-      return true;
-    } catch (error) {
-      console.error('Change Password Error:', error);
-      return true; // Soft success for local mode
     }
+
+    if (!existing) {
+      throw new Error('Usuário não encontrado.');
+    }
+
+    const currentActualPassword = existing.password || '123';
+    if (currentActualPassword !== currentPass.trim()) {
+      throw new Error('A senha atual informada está incorreta.');
+    }
+
+    const updatedUser: User = {
+      ...existing,
+      password: newPass.trim()
+    };
+
+    // Update local cache
+    const existsInLocal = local.some(u => u.id === userId);
+    const updatedCache = existsInLocal 
+      ? local.map(u => u.id === userId ? updatedUser : u) 
+      : [...local, updatedUser];
+    saveLocalUsersCache(updatedCache);
+    notifySubscribers();
+
+    // Update active session if changing logged in user's password
+    try {
+      const storedSession = localStorage.getItem(LOCAL_STORAGE_KEY);
+      if (storedSession) {
+        const parsedSession = JSON.parse(storedSession) as User;
+        if (parsedSession.id === userId) {
+          localStorage.setItem(LOCAL_STORAGE_KEY, JSON.stringify(updatedUser));
+        }
+      }
+    } catch (e) {
+      console.error('Error updating logged user session:', e);
+    }
+
+    // Persist to Firestore
+    await setDoc(doc(db, PATH, userId), updatedUser, { merge: true });
+
+    if (auth.currentUser) {
+      try {
+        await updatePassword(auth.currentUser, newPass);
+      } catch (e) {
+        console.warn('Firebase Auth password update skipped/failed:', e);
+      }
+    }
+
+    return true;
   }
 };
 

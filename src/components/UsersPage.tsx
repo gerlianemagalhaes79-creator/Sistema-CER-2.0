@@ -247,7 +247,7 @@ const UserFormModal = ({ isOpen, onClose, onSave, editingUser }: { isOpen: boole
         await UserService.updateUser(editingUser.id, {
           name: formData.name,
           email: formData.email,
-          password: formData.password || '123',
+          password: formData.password || editingUser.password,
           role: formData.role,
           accessType: formData.accessType,
         });
