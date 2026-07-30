@@ -117,6 +117,14 @@ const notifySubscribers = () => {
 const mergeUsers = (firestoreDocs: User[]): User[] => {
   const map = new Map<string, User>();
 
+  // 1. Start with default seed users
+  DEFAULT_USERS.forEach(u => map.set(u.id, u));
+
+  // 2. Overlay local cache
+  const localCache = getLocalUsersCache();
+  localCache.forEach(u => map.set(u.id, u));
+
+  // 3. Overlay Firestore documents (overwrites with status changes like 'Inactive' or edited passwords)
   firestoreDocs.forEach(u => {
     if (u && u.id) {
       map.set(u.id, u);
@@ -125,6 +133,13 @@ const mergeUsers = (firestoreDocs: User[]): User[] => {
 
   const mergedAll = Array.from(map.values());
   saveLocalUsersCache(mergedAll);
+
+  // Seed any missing default users into Firestore so all devices see them
+  DEFAULT_USERS.forEach(defUser => {
+    if (!firestoreDocs.some(f => f.id === defUser.id)) {
+      setDoc(doc(db, 'usuarios', defUser.id), defUser).catch(() => {});
+    }
+  });
 
   return mergedAll.filter(u => u.status !== 'Inactive');
 };

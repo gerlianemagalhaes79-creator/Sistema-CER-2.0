@@ -70,6 +70,14 @@ const notifySubscribers = () => {
 const mergeProfessionals = (firestoreDocs: Professional[]): Professional[] => {
   const map = new Map<string, Professional>();
 
+  // 1. Seed initial professionals
+  INITIAL_SEED_PROFESSIONALS.forEach(p => map.set(p.id, p));
+
+  // 2. Overlay local cache
+  const localCache = getLocalCache();
+  localCache.forEach(p => map.set(p.id, p));
+
+  // 3. Overlay Firestore documents
   firestoreDocs.forEach(p => {
     if (p && p.id) {
       map.set(p.id, p);
@@ -78,6 +86,14 @@ const mergeProfessionals = (firestoreDocs: Professional[]): Professional[] => {
 
   const merged = Array.from(map.values());
   saveLocalCache(merged);
+
+  // Seed missing initial professionals to Firestore
+  INITIAL_SEED_PROFESSIONALS.forEach(pro => {
+    if (!firestoreDocs.some(f => f.id === pro.id)) {
+      setDoc(doc(db, 'profissionais', pro.id), pro).catch(() => {});
+    }
+  });
+
   return merged.filter(p => p.status === 'Active').sort((a, b) => (a.name || '').localeCompare(b.name || '', 'pt-BR'));
 };
 

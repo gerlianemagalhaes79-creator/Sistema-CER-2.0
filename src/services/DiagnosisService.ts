@@ -66,6 +66,14 @@ const notifySubscribers = () => {
 const mergeDiagnoses = (firestoreDocs: Diagnosis[]): Diagnosis[] => {
   const map = new Map<string, Diagnosis>();
 
+  // 1. Seed initial diagnoses
+  INITIAL_SEED_DIAGNOSES.forEach(d => map.set(d.id, d));
+
+  // 2. Overlay local cache
+  const localCache = getLocalCache();
+  localCache.forEach(d => map.set(d.id, d));
+
+  // 3. Overlay Firestore docs
   firestoreDocs.forEach(d => {
     if (d && d.id) {
       map.set(d.id, d);
@@ -74,6 +82,14 @@ const mergeDiagnoses = (firestoreDocs: Diagnosis[]): Diagnosis[] => {
 
   const merged = Array.from(map.values());
   saveLocalCache(merged);
+
+  // Seed missing diagnoses to Firestore
+  INITIAL_SEED_DIAGNOSES.forEach(diag => {
+    if (!firestoreDocs.some(f => f.id === diag.id)) {
+      setDoc(doc(db, 'diagnosticos', diag.id), diag).catch(() => {});
+    }
+  });
+
   return merged.filter(d => d.status === 'Active').sort((a, b) => (a.name || '').localeCompare(b.name || '', 'pt-BR'));
 };
 

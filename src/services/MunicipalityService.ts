@@ -66,7 +66,14 @@ const notifySubscribers = () => {
 const mergeMunicipalities = (firestoreDocs: Municipality[]): Municipality[] => {
   const map = new Map<string, Municipality>();
 
-  // Use firestoreDocs as primary
+  // 1. Seed initial cities
+  INITIAL_SEED_CITIES.forEach(m => map.set(m.id, m));
+
+  // 2. Overlay local cache
+  const localCache = getLocalCache();
+  localCache.forEach(m => map.set(m.id, m));
+
+  // 3. Overlay Firestore docs
   firestoreDocs.forEach(m => {
     if (m && m.id) {
       map.set(m.id, m);
@@ -75,6 +82,14 @@ const mergeMunicipalities = (firestoreDocs: Municipality[]): Municipality[] => {
 
   const merged = Array.from(map.values());
   saveLocalCache(merged);
+
+  // Seed missing cities to Firestore
+  INITIAL_SEED_CITIES.forEach(city => {
+    if (!firestoreDocs.some(f => f.id === city.id)) {
+      setDoc(doc(db, 'municipios', city.id), city).catch(() => {});
+    }
+  });
+
   return merged.filter(m => m.status === 'Active').sort((a, b) => (a.name || '').localeCompare(b.name || '', 'pt-BR'));
 };
 
