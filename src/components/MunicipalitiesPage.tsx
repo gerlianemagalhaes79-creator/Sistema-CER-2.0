@@ -147,6 +147,8 @@ const MunicipalityFormModal = ({ isOpen, onClose, editingMunicipality }: { isOpe
   const [loading, setLoading] = useState(false);
 
   React.useEffect(() => {
+    if (!isOpen) return;
+
     if (editingMunicipality) {
       setFormData({
         name: editingMunicipality.name,

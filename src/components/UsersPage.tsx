@@ -216,6 +216,8 @@ const UserFormModal = ({ isOpen, onClose, onSave, editingUser }: { isOpen: boole
   const [loading, setLoading] = useState(false);
 
   React.useEffect(() => {
+    if (!isOpen) return;
+
     if (editingUser) {
       setFormData({
         name: editingUser.name,

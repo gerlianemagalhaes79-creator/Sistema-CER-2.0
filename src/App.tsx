@@ -270,13 +270,15 @@ const PatientFormModal = ({
   });
 
   useEffect(() => {
+    if (!isOpen) return;
+
     if (editingPatient) {
       setFormData({
-        name: editingPatient.name,
-        medicalRecordNumber: editingPatient.medicalRecordNumber,
-        birthDate: editingPatient.birthDate,
-        gender: editingPatient.gender,
-        city: editingPatient.city,
+        name: editingPatient.name || '',
+        medicalRecordNumber: editingPatient.medicalRecordNumber || '',
+        birthDate: editingPatient.birthDate || '',
+        gender: editingPatient.gender || 'M',
+        city: editingPatient.city || (availableCities[0] || ''),
         diagnoses: editingPatient.diagnoses || [],
         professionals: editingPatient.professionals || [],
         status: editingPatient.status || 'Ativo',
@@ -305,7 +307,7 @@ const PatientFormModal = ({
         observations: ''
       });
     }
-  }, [editingPatient, isOpen, availableCities, currentUser]);
+  }, [editingPatient, isOpen]);
 
   const age = useMemo(() => {
     if (!formData.birthDate) return '...';
@@ -587,6 +589,8 @@ const MovementFormModal = ({
   const [showPatientList, setShowPatientList] = useState(false);
 
   useEffect(() => {
+    if (!isOpen) return;
+
     if (editingMovement) {
       setFormData({
         patientId: editingMovement.patientId,

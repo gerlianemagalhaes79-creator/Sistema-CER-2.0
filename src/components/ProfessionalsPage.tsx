@@ -157,6 +157,8 @@ const ProfessionalFormModal = ({ isOpen, onClose, editingProfessional }: { isOpe
   const [loading, setLoading] = useState(false);
 
   React.useEffect(() => {
+    if (!isOpen) return;
+
     if (editingProfessional) {
       setFormData({
         name: editingProfessional.name,

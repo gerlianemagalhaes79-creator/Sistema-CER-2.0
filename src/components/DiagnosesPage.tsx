@@ -147,6 +147,8 @@ const DiagnosisFormModal = ({ isOpen, onClose, editingDiagnosis }: { isOpen: boo
   const [loading, setLoading] = useState(false);
 
   React.useEffect(() => {
+    if (!isOpen) return;
+
     if (editingDiagnosis) {
       setFormData({
         name: editingDiagnosis.name,
