@@ -1,80 +1,9 @@
 rules_version = '2';
 service cloud.firestore {
   match /databases/{database}/documents {
-    // Default deny
     match /{document=**} {
-      allow read, write: if false;
-    }
-
-    // Helper functions
-    function isSignedIn() {
-      return request.auth != null;
-    }
-
-    function getUserData() {
-      return get(/databases/$(database)/documents/usuarios/$(request.auth.uid)).data;
-    }
-
-    function isAdmin() {
-      return isSignedIn() && (
-        (exists(/databases/$(database)/documents/usuarios/$(request.auth.uid)) && getUserData().accessType == 'Administrador') || 
-        request.auth.token.email == 'gerlianemagalhaes79@gmail.com' ||
-        request.auth.token.email == 'cer2polisobral@gmail.com'
-      );
-    }
-
-    function isCoordination() {
-      return isSignedIn() && getUserData().accessType == 'Coordenação';
-    }
-
-    function isReception() {
-      return isSignedIn() && getUserData().accessType == 'Recepção';
-    }
-
-    function isProfessional() {
-      return isSignedIn() && getUserData().accessType == 'Profissional';
-    }
-
-    // Usuarios collection
-    match /usuarios/{userId} {
-      allow read: if isSignedIn() && (isAdmin() || isCoordination() || request.auth.uid == userId);
-      allow write: if isAdmin() || (isSignedIn() && request.auth.uid == userId);
-    }
-
-    // Pacientes collection
-    match /pacientes/{patientId} {
-      allow read: if isSignedIn() && (
-        isAdmin() || isCoordination() || isReception() || 
-        (isProfessional() && resource.data.professionals.hasAny([getUserData().name]))
-      );
-      allow write: if isAdmin() || isCoordination() || isReception();
-    }
-
-    // Movimentacoes collection
-    match /movimentacoes/{movementId} {
-      allow read: if isSignedIn() && (
-        isAdmin() || isCoordination() || isReception() || 
-        (isProfessional() && resource.data.professionals.hasAny([getUserData().name]))
-      );
-      allow write: if isAdmin() || isCoordination() || isReception();
-    }
-
-    // Profissionais collection
-    match /profissionais/{professionalId} {
-      allow read: if isSignedIn();
-      allow write: if isAdmin() || isCoordination();
-    }
-
-    // Municipios collection
-    match /municipios/{municipalityId} {
-      allow read: if isSignedIn();
-      allow write: if isAdmin() || isCoordination();
-    }
-
-    // Diagnosticos collection
-    match /diagnosticos/{diagnosisId} {
-      allow read: if isSignedIn();
-      allow write: if isAdmin() || isCoordination();
+      allow read, write: if true;
     }
   }
 }
+

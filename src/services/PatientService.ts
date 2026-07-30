@@ -38,7 +38,7 @@ export const PatientService = {
     try {
       const q = query(collection(db, PATH));
       const snapshot = await getDocs(q);
-      const docs = snapshot.docs.map(doc => doc.data() as Patient);
+      const docs = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() } as Patient));
       if (docs.length > 0) {
         saveLocalCache(docs);
         return docs.filter(p => !p.deletedAt).sort((a, b) => (a.name || '').localeCompare(b.name || ''));
@@ -61,19 +61,9 @@ export const PatientService = {
 
     const q = query(collection(db, PATH));
     return onSnapshot(q, (snapshot) => {
-      const firestoreDocs = snapshot.docs.map(doc => doc.data() as Patient);
+      const firestoreDocs = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() } as Patient));
       
-      if (firestoreDocs.length > 0) {
-        saveLocalCache(firestoreDocs);
-      } else {
-        // If firestore is empty but we have local patients, push them to Firestore
-        const localCache = getLocalCache();
-        if (localCache.length > 0) {
-          localCache.forEach(p => {
-            setDoc(doc(db, PATH, p.id), p).catch(err => console.error('Error syncing local patient to Firestore:', err));
-          });
-        }
-      }
+      saveLocalCache(firestoreDocs);
 
       const currentList = getLocalCache();
       const activeList = currentList

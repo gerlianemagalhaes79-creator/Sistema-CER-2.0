@@ -10,6 +10,7 @@ import { db, handleFirestoreError, OperationType } from '../lib/firebase';
 import { Diagnosis, DIAGNOSES } from '../types';
 
 const CACHE_KEY = 'cer_diagnoses_cache_v2';
+const SEED_KEY = 'cer_diagnoses_seeded_v1';
 
 const INITIAL_SEED_DIAGNOSES: Diagnosis[] = DIAGNOSES.map((diagName, index) => ({
   id: `diag-seed-${index + 1}`,
@@ -29,12 +30,10 @@ const getLocalCache = (): Diagnosis[] => {
         return parsed;
       }
     }
-    saveLocalCache(INITIAL_SEED_DIAGNOSES);
-    return INITIAL_SEED_DIAGNOSES;
   } catch (e) {
     console.error('Error reading diagnosis cache:', e);
   }
-  return INITIAL_SEED_DIAGNOSES;
+  return localStorage.getItem(SEED_KEY) ? [] : INITIAL_SEED_DIAGNOSES;
 };
 
 const saveLocalCache = (items: Diagnosis[]) => {
@@ -63,36 +62,6 @@ const notifySubscribers = () => {
   });
 };
 
-const mergeDiagnoses = (firestoreDocs: Diagnosis[]): Diagnosis[] => {
-  const map = new Map<string, Diagnosis>();
-
-  // 1. Seed initial diagnoses
-  INITIAL_SEED_DIAGNOSES.forEach(d => map.set(d.id, d));
-
-  // 2. Overlay local cache
-  const localCache = getLocalCache();
-  localCache.forEach(d => map.set(d.id, d));
-
-  // 3. Overlay Firestore docs
-  firestoreDocs.forEach(d => {
-    if (d && d.id) {
-      map.set(d.id, d);
-    }
-  });
-
-  const merged = Array.from(map.values());
-  saveLocalCache(merged);
-
-  // Seed missing diagnoses to Firestore
-  INITIAL_SEED_DIAGNOSES.forEach(diag => {
-    if (!firestoreDocs.some(f => f.id === diag.id)) {
-      setDoc(doc(db, 'diagnosticos', diag.id), diag).catch(() => {});
-    }
-  });
-
-  return merged.filter(d => d.status === 'Active').sort((a, b) => (a.name || '').localeCompare(b.name || '', 'pt-BR'));
-};
-
 let firestoreUnsubscribe: (() => void) | null = null;
 
 export const DiagnosisService = {
@@ -101,9 +70,11 @@ export const DiagnosisService = {
     try {
       const q = query(collection(db, PATH));
       const snapshot = await getDocs(q);
-      const docs = snapshot.docs.map(doc => doc.data() as Diagnosis);
+      const docs = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() } as Diagnosis));
       if (docs.length > 0) {
-        return mergeDiagnoses(docs);
+        localStorage.setItem(SEED_KEY, 'true');
+        saveLocalCache(docs);
+        return getActiveDiagnoses();
       }
       return getActiveDiagnoses();
     } catch (error) {
@@ -121,15 +92,17 @@ export const DiagnosisService = {
       try {
         const q = query(collection(db, PATH));
         firestoreUnsubscribe = onSnapshot(q, (snapshot) => {
-          const fetched = snapshot.docs.map(doc => doc.data() as Diagnosis);
-          if (fetched.length === 0) {
+          const fetched = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() } as Diagnosis));
+          if (fetched.length === 0 && !localStorage.getItem(SEED_KEY)) {
+            localStorage.setItem(SEED_KEY, 'true');
             INITIAL_SEED_DIAGNOSES.forEach(diag => {
               setDoc(doc(db, PATH, diag.id), diag).catch(err => console.error('Error seeding diagnosis:', err));
             });
             saveLocalCache(INITIAL_SEED_DIAGNOSES);
             notifySubscribers();
           } else {
-            mergeDiagnoses(fetched);
+            localStorage.setItem(SEED_KEY, 'true');
+            saveLocalCache(fetched);
             notifySubscribers();
           }
         }, (error) => {

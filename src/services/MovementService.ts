@@ -38,7 +38,7 @@ export const MovementService = {
     try {
       const q = query(collection(db, PATH));
       const snapshot = await getDocs(q);
-      const docs = snapshot.docs.map(doc => doc.data() as Movement);
+      const docs = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() } as Movement));
       if (docs.length > 0) {
         saveLocalCache(docs);
         return docs.filter(m => !m.deletedAt).sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime());
@@ -61,18 +61,9 @@ export const MovementService = {
 
     const q = query(collection(db, PATH));
     return onSnapshot(q, (snapshot) => {
-      const firestoreDocs = snapshot.docs.map(doc => doc.data() as Movement);
+      const firestoreDocs = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() } as Movement));
       
-      if (firestoreDocs.length > 0) {
-        saveLocalCache(firestoreDocs);
-      } else {
-        const localCache = getLocalCache();
-        if (localCache.length > 0) {
-          localCache.forEach(m => {
-            setDoc(doc(db, PATH, m.id), m).catch(err => console.error('Error syncing local movement to Firestore:', err));
-          });
-        }
-      }
+      saveLocalCache(firestoreDocs);
 
       const currentList = getLocalCache();
       const activeList = currentList

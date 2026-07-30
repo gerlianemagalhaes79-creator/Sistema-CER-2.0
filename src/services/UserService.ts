@@ -9,6 +9,7 @@ import {
   getDoc, 
   setDoc, 
   updateDoc, 
+  deleteDoc,
   getDocs, 
   collection, 
   query, 
@@ -73,31 +74,53 @@ export const DEFAULT_USERS: User[] = [
 
 const LOCAL_STORAGE_KEY = 'cer_logged_user';
 const CACHE_KEY = 'cer_users_cache_v2';
+const SEED_KEY = 'cer_users_seeded_v1';
+const DELETED_USERS_KEY = 'cer_deleted_users_v1';
+
+const getDeletedUserIds = (): Set<string> => {
+  try {
+    const stored = localStorage.getItem(DELETED_USERS_KEY);
+    if (stored) return new Set(JSON.parse(stored));
+  } catch (e) {
+    console.error('Error reading deleted users set:', e);
+  }
+  return new Set();
+};
+
+const markUserDeleted = (id: string) => {
+  const set = getDeletedUserIds();
+  set.add(id);
+  try {
+    localStorage.setItem(DELETED_USERS_KEY, JSON.stringify(Array.from(set)));
+  } catch (e) {
+    console.error('Error saving deleted users set:', e);
+  }
+};
 
 const listeners = new Set<(users: User[]) => void>();
 
 const getLocalUsersCache = (): User[] => {
+  const deletedIds = getDeletedUserIds();
   try {
     const stored = localStorage.getItem(CACHE_KEY);
     if (stored) {
       const parsed = JSON.parse(stored);
-      if (Array.isArray(parsed) && parsed.length > 0) {
-        // Ensure default users exist if not already in parsed
-        const map = new Map<string, User>();
-        DEFAULT_USERS.forEach(u => map.set(u.id, u));
-        parsed.forEach(u => map.set(u.id, u));
-        return Array.from(map.values());
+      if (Array.isArray(parsed)) {
+        return parsed.filter(u => u && u.id && !deletedIds.has(u.id));
       }
     }
   } catch (e) {
     console.error('Error reading users cache:', e);
   }
-  return DEFAULT_USERS;
+  const base = localStorage.getItem(SEED_KEY) ? [] : DEFAULT_USERS;
+  return base.filter(u => u && u.id && !deletedIds.has(u.id));
 };
 
 const saveLocalUsersCache = (users: User[]) => {
+  const deletedIds = getDeletedUserIds();
+  const cleanUsers = users.filter(u => u && u.id && !deletedIds.has(u.id));
   try {
-    localStorage.setItem(CACHE_KEY, JSON.stringify(users));
+    localStorage.setItem(CACHE_KEY, JSON.stringify(cleanUsers));
   } catch (e) {
     console.error('Error saving users cache:', e);
   }
@@ -114,40 +137,11 @@ const notifySubscribers = () => {
   });
 };
 
-const mergeUsers = (firestoreDocs: User[]): User[] => {
-  const map = new Map<string, User>();
-
-  // 1. Start with default seed users
-  DEFAULT_USERS.forEach(u => map.set(u.id, u));
-
-  // 2. Overlay local cache
-  const localCache = getLocalUsersCache();
-  localCache.forEach(u => map.set(u.id, u));
-
-  // 3. Overlay Firestore documents (overwrites with status changes like 'Inactive' or edited passwords)
-  firestoreDocs.forEach(u => {
-    if (u && u.id) {
-      map.set(u.id, u);
-    }
-  });
-
-  const mergedAll = Array.from(map.values());
-  saveLocalUsersCache(mergedAll);
-
-  // Seed any missing default users into Firestore so all devices see them
-  DEFAULT_USERS.forEach(defUser => {
-    if (!firestoreDocs.some(f => f.id === defUser.id)) {
-      setDoc(doc(db, 'usuarios', defUser.id), defUser).catch(() => {});
-    }
-  });
-
-  return mergedAll.filter(u => u.status !== 'Inactive');
-};
-
 export const UserService = {
   getActiveUsers: (): User[] => {
     const cache = getLocalUsersCache();
-    return cache.filter(u => u.status !== 'Inactive');
+    const deletedIds = getDeletedUserIds();
+    return cache.filter(u => u.status !== 'Inactive' && !deletedIds.has(u.id));
   },
 
   getUsers: async (): Promise<User[]> => {
@@ -156,9 +150,11 @@ export const UserService = {
     try {
       const q = query(collection(db, PATH));
       const snapshot = await getDocs(q);
-      const fetched = snapshot.docs.map(doc => doc.data() as User);
+      const fetched = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() } as User));
       if (fetched.length > 0) {
-        return mergeUsers(fetched);
+        localStorage.setItem(SEED_KEY, 'true');
+        saveLocalUsersCache(fetched);
+        return UserService.getActiveUsers();
       }
       return cachedActive;
     } catch (error) {
@@ -176,16 +172,20 @@ export const UserService = {
     try {
       const q = query(collection(db, PATH));
       const unsubscribe = onSnapshot(q, (snapshot) => {
-        const fetched = snapshot.docs.map(doc => doc.data() as User);
-        if (fetched.length === 0) {
-          DEFAULT_USERS.forEach(u => {
+        const fetched = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() } as User));
+        if (fetched.length === 0 && !localStorage.getItem(SEED_KEY)) {
+          localStorage.setItem(SEED_KEY, 'true');
+          const deletedIds = getDeletedUserIds();
+          const initialSeed = DEFAULT_USERS.filter(u => !deletedIds.has(u.id));
+          initialSeed.forEach(u => {
             setDoc(doc(db, PATH, u.id), u).catch(err => console.error('Error seeding default user:', err));
           });
-          saveLocalUsersCache(DEFAULT_USERS);
-          callback(DEFAULT_USERS.filter(u => u.status !== 'Inactive'));
+          saveLocalUsersCache(initialSeed);
+          callback(UserService.getActiveUsers());
         } else {
-          const active = mergeUsers(fetched);
-          callback(active);
+          localStorage.setItem(SEED_KEY, 'true');
+          saveLocalUsersCache(fetched);
+          callback(UserService.getActiveUsers());
         }
       }, (error) => {
         console.warn('Subscription error on usuarios:', error);
@@ -258,30 +258,18 @@ export const UserService = {
 
   deleteUser: async (id: string): Promise<void> => {
     const PATH = 'usuarios';
+    markUserDeleted(id);
 
     const local = getLocalUsersCache();
-    const existing = local.find(u => u.id === id) || DEFAULT_USERS.find(u => u.id === id);
-
-    const inactiveUser: User = {
-      ...(existing || { 
-        id, 
-        name: 'Usuário', 
-        email: '', 
-        role: '', 
-        accessType: AccessType.Profissional, 
-        createdAt: new Date().toISOString() 
-      }),
-      status: 'Inactive',
-      deletedAt: new Date().toISOString()
-    };
-
-    const exists = local.some(u => u.id === id);
-    const updatedCache = exists ? local.map(u => u.id === id ? inactiveUser : u) : [...local, inactiveUser];
+    const updatedCache = local.filter(u => u.id !== id);
     saveLocalUsersCache(updatedCache);
     notifySubscribers();
 
-    setDoc(doc(db, PATH, id), inactiveUser, { merge: true })
-      .catch(error => handleFirestoreError(error, OperationType.UPDATE, PATH));
+    try {
+      await deleteDoc(doc(db, PATH, id));
+    } catch (error) {
+      handleFirestoreError(error, OperationType.DELETE, PATH);
+    }
   },
 
   loginDirectly: (user: User): User => {
@@ -304,24 +292,28 @@ export const UserService = {
       throw new Error('Informe a senha de acesso.');
     }
 
-    let allUsers: User[] = [];
-    try {
-      allUsers = await UserService.getUsers();
-    } catch (e) {
-      allUsers = DEFAULT_USERS;
-    }
-
     const normalize = (str: string) => str.trim().toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "");
     const normalizedTerm = normalize(term);
 
-    // Exact match on employee name or email
-    const matched = allUsers.find(u => 
-      normalize(u.name) === normalizedTerm || 
-      normalize(u.email) === normalizedTerm
-    ) || DEFAULT_USERS.find(u => 
+    // 1. Check local cache / default users first for instant login (<10ms)
+    const localUsers = UserService.getActiveUsers();
+    let matched = localUsers.find(u => 
       normalize(u.name) === normalizedTerm || 
       normalize(u.email) === normalizedTerm
     );
+
+    // 2. If not found in local cache, fallback to fetching from Firestore
+    if (!matched) {
+      try {
+        const firestoreUsers = await UserService.getUsers();
+        matched = firestoreUsers.find(u => 
+          normalize(u.name) === normalizedTerm || 
+          normalize(u.email) === normalizedTerm
+        );
+      } catch (e) {
+        console.warn('Firestore fetch user fallback error:', e);
+      }
+    }
 
     if (!matched) {
       throw new Error('Usuário não encontrado. Digite o nome completo do funcionário ou e-mail cadastrado.');
